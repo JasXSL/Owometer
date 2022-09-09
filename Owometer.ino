@@ -5,28 +5,28 @@
 */
 #include <avr/sleep.h>
 #include "Pitches.h"
-const uint8_t PIN_BUZZER = 0;
-const uint8_t PIN_VELOSTAT_EN = 2;
-const uint8_t PIN_VELOSTAT_IN = 1;
+const uint8_t PIN_BUZZER = PIN_PA1;
+const uint8_t PIN_VELOSTAT_EN = PIN_PA6;
+const uint8_t PIN_VELOSTAT_IN = PIN_PA2;
 const uint32_t SLEEP_TIME = 30000;
 
 uint32_t ON_TIME = 0;		// Time when it was turned on. 0 = off
 uint8_t LAST_NOTE = 5;
 
 const uint8_t NUM_LEDS = 5;
-const uint8_t LEDS[NUM_LEDS] = {
-	6, 7, 8, 9, 10
+const uint8_t LEDS[NUM_LEDS] = {	// BGYOR
+	PIN_PB1, PIN_PB0, PIN_PA3, PIN_PA5, PIN_PA4
 };
 
 const uint16_t NOTES[5] = {
 	NOTE_A4,
-	NOTE_AS4,
 	NOTE_B4,
-	NOTE_C5
+	NOTE_C5,
+	NOTE_D5
 };
 
 uint16_t lastFreq = 0;
-uint16_t READING_THRESH = 700;
+uint16_t READING_THRESH = 0;	// Calibrated on boot
 
 void setLEDs( uint8_t leds = 0 ){
 
@@ -40,27 +40,31 @@ void setLEDs( uint8_t leds = 0 ){
 
 uint8_t getStep( uint16_t reading ){
 
-	reading = min(reading, 1000);
-	reading -= READING_THRESH;
-	uint16_t max = 1000-READING_THRESH;
-	
-	float perc = pow((float)reading/max, 4);
-	return max((uint8_t)(perc*100)/25, 1);
+	uint8_t minNr = 1;
+	uint16_t divider = 1000/70;				// Makes a divider for 70%
+	uint16_t maxVal = (1024-READING_THRESH)*10/divider;	// Sets max to a value divider% between reading threshold and the max voltage
+	// Prevent the reading from going below 0
+	if( reading < READING_THRESH )
+		reading = READING_THRESH;
+	// Subtract READING_THRESH so reading is now between 0 and maxval
+	reading = reading-READING_THRESH;
+	// Map to a value between 0 and 1000
+	const uint16_t percMax = 1000;
+	uint32_t mapped = map(reading, 0,maxVal, 0,percMax);
+	if( mapped > percMax )
+		mapped = percMax;
+	// Raise by 2
+	mapped = mapped*mapped/1000;
 
-}
-
-void setTone( uint16_t freq ){
-
-	noTone(PIN_BUZZER);
-	delay(5);
-	tone(PIN_BUZZER, freq);
+	// Divide into 5 sections
+	return mapped/200+1;
 
 }
 
 void animStart(){
-	
+	// boot animation
 	uint8_t pre = 0;
-	for(uint8_t i = 0; i < NUM_LEDS*2; ++i ){
+	for( uint8_t i = 0; i < NUM_LEDS*2; ++i ){
 
 		uint8_t n = i;
 		if( n >= NUM_LEDS )
@@ -72,16 +76,13 @@ void animStart(){
 		pre = n;
 
 	}
-
 }
 
 
 ISR(RTC_PIT_vect){
   	RTC.PITINTFLAGS = RTC_PI_bm;          /* Clear interrupt flag by writing '1' (required) */
 }
-void sleep(){
-	sleep_cpu();
-}
+
 
 void setup(){
 
@@ -95,7 +96,8 @@ void setup(){
 	delay(10);
 	Serial.println("IT BEGINS");
 	*/
-	for( uint8_t i = 0; i < NUM_LEDS; ++i ){
+	uint8_t i;
+	for( i = 0; i < NUM_LEDS; ++i ){
 		pinMode(LEDS[i], OUTPUT);
 		digitalWrite(LEDS[i], LOW);
 	}
@@ -109,18 +111,24 @@ void setup(){
 	RTC.PITINTCTRL = RTC_PI_bm;           /* PIT Interrupt: enabled */
 	RTC.PITCTRLA = RTC_PERIOD_CYC32768_gc /* RTC Clock Cycles 32k, 1Hz ( */
 	| RTC_PITEN_bm;                       /* Enable PIT counter: enabled */
-
 	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
 	sleep_enable();
 	
 	
-	animStart();
+	
 
-
+	// Calibrate
 	digitalWrite(PIN_VELOSTAT_EN, HIGH);
-	delay(100);
-	READING_THRESH = analogRead(PIN_VELOSTAT_IN)+100;
+	for( i = 0; i < 3; ++i ){
+		
+		delay(100);
+		READING_THRESH += analogRead(PIN_VELOSTAT_IN);
+
+	}
+	READING_THRESH = READING_THRESH / 3 + 200;
 	digitalWrite(PIN_VELOSTAT_EN, LOW);
+
+	animStart();
 	
 	digitalWrite(LEDS[0], HIGH);
 
@@ -132,7 +140,10 @@ void loop(){
 	digitalWrite(PIN_VELOSTAT_EN, HIGH);
 	delay(1);
 	const uint16_t reading = analogRead(PIN_VELOSTAT_IN);
-	digitalWrite(PIN_VELOSTAT_EN, LOW);
+	//digitalWrite(PIN_VELOSTAT_EN, LOW);
+
+	setLEDs(getStep(reading));
+	return;
 
 	const uint32_t ms = millis();
 
@@ -166,8 +177,11 @@ void loop(){
 			
 			ON_TIME = ms;		// Set it as on
 			LAST_NOTE = note;
-			if( note )
-				setTone(NOTES[note-1]);
+			if( note ){
+				noTone(PIN_BUZZER);
+				delay(5);
+				tone(PIN_BUZZER, NOTES[note-1]);
+			}
 			else
 				noTone(PIN_BUZZER);
 			setLEDs(note+1);
@@ -179,7 +193,7 @@ void loop(){
 	if( !ON_TIME ){
 
 		setLEDs(0);
-		sleep();
+		sleep_cpu();
 
 	}
 	else
