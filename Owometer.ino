@@ -19,10 +19,10 @@ const uint8_t LEDS[NUM_LEDS] = {	// BGYOR
 };
 
 const uint16_t NOTES[5] = {
-	NOTE_A4,
-	NOTE_B4,
 	NOTE_C5,
-	NOTE_D5
+	NOTE_D5,
+	NOTE_E5,
+	NOTE_F5
 };
 
 uint16_t lastFreq = 0;
@@ -40,8 +40,7 @@ void setLEDs( uint8_t leds = 0 ){
 
 uint8_t getStep( uint16_t reading ){
 
-	uint8_t minNr = 1;
-	uint16_t divider = 1000/70;				// Makes a divider for 70%
+	uint16_t divider = 1000/90;				// Makes a divider for 70%
 	uint16_t maxVal = (1024-READING_THRESH)*10/divider;	// Sets max to a value divider% between reading threshold and the max voltage
 	// Prevent the reading from going below 0
 	if( reading < READING_THRESH )
@@ -51,14 +50,17 @@ uint8_t getStep( uint16_t reading ){
 	// Map to a value between 0 and 1000
 	const uint16_t percMax = 1000;
 	uint32_t mapped = map(reading, 0,maxVal, 0,percMax);
-	if( mapped > percMax )
-		mapped = percMax;
+	if( mapped > percMax-1 )	// minus 1 so it never goes to max.
+		mapped = percMax-1;
 	// Raise by 2
-	mapped = mapped*mapped/1000;
-
-	// Divide into 5 sections
-	return mapped/200+1;
-
+	//mapped = mapped*mapped/1000/2000+1;
+	if( mapped < 300 )
+		return 1;
+	if( mapped < 500 )
+		return 2;
+	if( mapped < 800 )
+		return 3;
+	return 4;
 }
 
 void animStart(){
@@ -140,10 +142,7 @@ void loop(){
 	digitalWrite(PIN_VELOSTAT_EN, HIGH);
 	delay(1);
 	const uint16_t reading = analogRead(PIN_VELOSTAT_IN);
-	//digitalWrite(PIN_VELOSTAT_EN, LOW);
-
-	setLEDs(getStep(reading));
-	return;
+	digitalWrite(PIN_VELOSTAT_EN, LOW);
 
 	const uint32_t ms = millis();
 
