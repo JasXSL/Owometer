@@ -3,6 +3,9 @@
 	4mhz
 	Startup time: 64ms
 */
+// If you're using the wire directly, and no copper sandwich
+#define NEW_SENSOR
+
 #include <avr/sleep.h>
 #include "Pitches.h"
 const uint8_t PIN_BUZZER = PIN_PA1;
@@ -40,7 +43,15 @@ void setLEDs( uint8_t leds = 0 ){
 
 uint8_t getStep( uint16_t reading ){
 
-	uint16_t divider = 1000/90;				// Makes a divider for 70%
+	uint8_t div = 
+	#ifdef NEW_SENSOR
+		60
+	#else
+		90
+	#endif
+	;
+
+	uint16_t divider = 1000/div;				// Makes a divider for 70%
 	uint16_t maxVal = (1024-READING_THRESH)*10/divider;	// Sets max to a value divider% between reading threshold and the max voltage
 	// Prevent the reading from going below 0
 	if( reading < READING_THRESH )
@@ -54,9 +65,9 @@ uint8_t getStep( uint16_t reading ){
 		mapped = percMax-1;
 	// Raise by 2
 	//mapped = mapped*mapped/1000/2000+1;
-	if( mapped < 300 )
+	if( mapped < 400 )
 		return 1;
-	if( mapped < 500 )
+	if( mapped < 650 )
 		return 2;
 	if( mapped < 800 )
 		return 3;
